@@ -5,7 +5,7 @@ class RequestQueue extends EventEmitter {
   /**
    * Очередь принимает запросы в виде объекта
    * Запросу присваивается ID и запрос отправляется в функцию sendFunction
-   * 
+   *
    * Пераметры:
    * sendFunction - Асинхронная функция, которая будет вызываться для отправки запроса.
    * Принимает объект запроса вида:
@@ -23,9 +23,9 @@ class RequestQueue extends EventEmitter {
    *        .....
    *      }
    *    }
-   * 
-   * maxId - Максимально возможный ID, который будет присваиваться запросам 
-   * 
+   *
+   * maxId - Максимально возможный ID, который будет присваиваться запросам
+   *
    * timeoutDuration - Длительность таймаута в миллисекундах.
    */
   constructor(sendFunction, maxId, timeoutDuration) {
@@ -63,13 +63,13 @@ class RequestQueue extends EventEmitter {
 
   // Пытается запустить обработку следующего запроса из очереди
   _tryProcessNext() {
-      // Если уже идет обработка или очередь пуста, ничего не делаем
-      if (this.isProcessing) {
-        return;
-      }
-      if (this.queue.length === 0) {
-        return;
-      }
+    // Если уже идет обработка или очередь пуста, ничего не делаем
+    if (this.isProcessing) {
+      return;
+    }
+    if (this.queue.length === 0) {
+      return;
+    }
 
     this.isProcessing = true; // Устанавливаем флаг обработки
     const currentReq = this.queue.shift(); // Извлекаем первый запрос из очереди
@@ -105,15 +105,21 @@ class RequestQueue extends EventEmitter {
     if (!active) {
       return;
     }
-    if(currentResp && typeof currentResp === 'object' && currentResp.hasOwnProperty('id') && currentResp.hasOwnProperty('response')) {
+    if (
+      currentResp &&
+      typeof currentResp === 'object' &&
+      currentResp.hasOwnProperty('id') &&
+      currentResp.hasOwnProperty('response')
+    ) {
       clearTimeout(active.timer); // Отменяем таймер таймаута
       this.activeRequests.delete(currentResp.id); // Удаляем из активных запросов
-
-      this.emit('success', currentResp); // Сообщаем об успехе
-
-      this.isProcessing = false;  // Завершаем обработку текущего
+      try {
+        this.emit('success', currentResp); // Сообщаем об успехе
+      } catch (e) {
+        console.log('[QUEUE]', 'emit success', e);
+      }
+      this.isProcessing = false; // Завершаем обработку текущего
       this._tryProcessNext(); // Пытаемся взять следующий
-
     } else throw new Error('The response structure is invalid');
   }
 
@@ -126,15 +132,18 @@ class RequestQueue extends EventEmitter {
 
     this.activeRequests.delete(id); // Удаляем из активных запросов
 
-    this.emit('timeout', { id: id, request: active.requestData, error: new Error('Request timed out') }); // Сообщаем о таймауте
-
+    try {
+      this.emit('timeout', { id: id, request: active.requestData, error: new Error('Request timed out') }); // Сообщаем о таймауте
+    } catch (e) {
+      console.log('[QUEUE]', 'emit timeout', e);
+    }
     // Завершаем обработку текущего и пытаемся взять следующий
     this.isProcessing = false;
     this._tryProcessNext();
   }
 
   // Обрабатывает ошибку при отправке или обработке запроса.
-   _handleError(id, error) {
+  _handleError(id, error) {
     const active = this.activeRequests.get(id);
     if (!active) {
       return;
@@ -143,8 +152,11 @@ class RequestQueue extends EventEmitter {
     clearTimeout(active.timer); // Отменяем таймер таймаута на всякий случай
     this.activeRequests.delete(id); // Удаляем из активных запросов
 
-    this.emit('error', { id: id, request: active.requestData, error: error }); // Сообщаем об ошибке
-
+    try {
+      this.emit('error', { id: id, request: active.requestData, error: error }); // Сообщаем об ошибке
+    } catch (e) {
+      console.log('[QUEUE]', 'emit error', e);
+    }
     // Завершаем обработку текущего и пытаемся взять следующий
     this.isProcessing = false;
     this._tryProcessNext();
