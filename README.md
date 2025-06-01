@@ -30,6 +30,7 @@ constructor(sendFunction, maxId, timeoutDuration)
     ```
   - `maxId`: максимально возможный ID, который будет присваиваться запросам.
   - `timeoutDuration`: длительность таймаута в миллисекундах.
+  - `sendingDelay`: задержка между отправкой запросов в миллисекундах
 
 #### Методы
 

@@ -27,8 +27,10 @@ class RequestQueue extends EventEmitter {
    * maxId - Максимально возможный ID, который будет присваиваться запросам
    *
    * timeoutDuration - Длительность таймаута в миллисекундах.
+   * 
+   * sendingDelay - Задержка между отправкой запросов в миллисекундах.
    */
-  constructor(sendFunction, maxId, timeoutDuration) {
+  constructor(sendFunction, maxId, timeoutDuration, sendingDelay) {
     super();
     if (typeof sendFunction !== 'function') {
       throw new Error('sendFunction не функция');
@@ -36,10 +38,12 @@ class RequestQueue extends EventEmitter {
     this.sendFunction = sendFunction;
     this.maxId = maxId;
     this.timeoutDuration = timeoutDuration;
+    this.sendingDelay = sendingDelay;
 
     this.queue = []; // Массив для хранения очереди запросов { id, request }
     this.activeRequests = new Map(); // Map для отслеживания активных запросов и их таймеров { requestId -> { timer: NodeJS.Timeout, requestData: object } }
     this.isProcessing = false; // Флаг, указывающий, обрабатывается ли сейчас запрос
+    this.isDelaying = false; // Флаг, указывающий, активна ли пауза перед отправкой следующего запроса
     this.requestCounter = 0; // Простой счетчик для ID
   }
 
@@ -51,6 +55,7 @@ class RequestQueue extends EventEmitter {
 
   // Добавляет новый запрос в очередь.
   addRequest(oRequest) {
+    // console.log('[QUEUE] addRequest', oRequest);
     const requestId = this._generateId();
     const requestItem = {
       id: requestId,
@@ -61,10 +66,29 @@ class RequestQueue extends EventEmitter {
     return requestId;
   }
 
+  // Планирует запуск обработки следующего запроса с учетом sendingDelay
+  _scheduleNextProcess() {
+    // Если очередь пуста, ничего не делаем
+    if (this.queue.length === 0) {
+      return;
+    }
+
+    if (this.sendingDelay && this.sendingDelay > 0) {
+      this.isDelaying = true;
+      // console.log(`[QUEUE] Установлена задержка ${this.sendingDelay}ms перед следующим запросом.`);
+      setTimeout(() => {
+        this.isDelaying = false;
+        this._tryProcessNext();
+      }, this.sendingDelay);
+    } else {
+      this._tryProcessNext(); // Запускаем без задержки
+    }
+  }
+
   // Пытается запустить обработку следующего запроса из очереди
   _tryProcessNext() {
-    // Если уже идет обработка или очередь пуста, ничего не делаем
-    if (this.isProcessing) {
+    // Если уже идет обработка, активна пауза, или очередь пуста, ничего не делаем
+    if (this.isProcessing || this.isDelaying) {
       return;
     }
     if (this.queue.length === 0) {
@@ -119,7 +143,7 @@ class RequestQueue extends EventEmitter {
         console.log('[QUEUE]', 'emit success', e);
       }
       this.isProcessing = false; // Завершаем обработку текущего
-      this._tryProcessNext(); // Пытаемся взять следующий
+      this._scheduleNextProcess(); // Планируем следующий запуск
     } else throw new Error('The response structure is invalid');
   }
 
@@ -137,9 +161,9 @@ class RequestQueue extends EventEmitter {
     } catch (e) {
       console.log('[QUEUE]', 'emit timeout', e);
     }
-    // Завершаем обработку текущего и пытаемся взять следующий
+    // Завершаем обработку текущего и планируем следующий
     this.isProcessing = false;
-    this._tryProcessNext();
+    this._scheduleNextProcess();
   }
 
   // Обрабатывает ошибку при отправке или обработке запроса.
@@ -157,9 +181,9 @@ class RequestQueue extends EventEmitter {
     } catch (e) {
       console.log('[QUEUE]', 'emit error', e);
     }
-    // Завершаем обработку текущего и пытаемся взять следующий
+    // Завершаем обработку текущего и планируем следующий
     this.isProcessing = false;
-    this._tryProcessNext();
+    this._scheduleNextProcess();
   }
 
   // Получает текущий размер очереди (запросы, ожидающие отправки).
